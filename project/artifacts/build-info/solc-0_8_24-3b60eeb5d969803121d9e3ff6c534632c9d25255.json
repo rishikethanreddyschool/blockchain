@@ -1,0 +1,35 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_24-3b60eeb5d969803121d9e3ff6c534632c9d25255",
+  "solcVersion": "0.8.24",
+  "solcLongVersion": "0.8.24+commit.e11b9ed9",
+  "userSourceNameMap": {
+    "contracts/ImageRegistry.sol": "project/contracts/ImageRegistry.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "shanghai",
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/ImageRegistry.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract ImageRegistry {\n    mapping(string => bool) private _registeredHashes;\n    string[] private _hashList;\n\n    event ImageHashRegistered(string indexed imageHash, uint256 timestamp);\n    event ImageHashesRegistered(string indexed cryptographicHash, string perceptualHash, uint256 timestamp);\n\n    function registerCryptographicHash(string memory cryptographicHash) public {\n        require(!_registeredHashes[cryptographicHash], \"Cryptographic hash already registered\");\n        _registeredHashes[cryptographicHash] = true;\n        _hashList.push(cryptographicHash);\n        emit ImageHashRegistered(cryptographicHash, block.timestamp);\n    }\n\n    function registerImageHashes(string memory cryptographicHash, string memory perceptualHash) public {\n        require(!_registeredHashes[cryptographicHash], \"Cryptographic hash already registered\");\n        _registeredHashes[cryptographicHash] = true;\n        _hashList.push(cryptographicHash);\n        emit ImageHashesRegistered(cryptographicHash, perceptualHash, block.timestamp);\n    }\n\n    function isHashRegistered(string memory imageHash) public view returns (bool) {\n        return _registeredHashes[imageHash];\n    }\n\n    function getTotalRegisteredHashes() public view returns (uint256) {\n        return _hashList.length;\n    }\n\n    function getHashAtIndex(uint256 index) public view returns (string memory) {\n        require(index < _hashList.length, \"Index out of bounds\");\n        return _hashList[index];\n    }\n}"
+      }
+    }
+  }
+}
