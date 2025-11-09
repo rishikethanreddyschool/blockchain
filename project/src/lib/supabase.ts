@@ -12,6 +12,7 @@ export type ArtworkMetadata = {
   description: string;
   image_url: string;
   hash: string;
+  perceptual_hash: string | null;
   uploaded_at: string;
 };
 

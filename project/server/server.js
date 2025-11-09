@@ -21,9 +21,17 @@ app.post('/register-image', async (req, res) => {
       return res.status(400).json({ error: 'Image hash is required.' });
     }
 
+    // Check if environment variables are configured
+    if (!process.env.VITE_PUBLIC_SEPOLIA_RPC_URL || !process.env.PRIVATE_KEY) {
+      console.warn('Blockchain configuration missing. Skipping blockchain registration.');
+      return res.status(200).json({
+        message: 'Image hash stored locally (blockchain registration skipped - configuration required)'
+      });
+    }
+
     // Setup provider and signer
     const provider = new ethers.JsonRpcProvider(process.env.VITE_PUBLIC_SEPOLIA_RPC_URL);
-    const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider); // Use a private key from .env
+    const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
     const contract = new ethers.Contract(
       IMAGEREGISTRY_SEPOLIA_CONTRACT_ADDRESS,
@@ -31,13 +39,30 @@ app.post('/register-image', async (req, res) => {
       signer
     );
 
+    // Check if hash is already registered
+    const isRegistered = await contract.isHashRegistered(imageHash);
+    if (isRegistered) {
+      return res.status(409).json({ error: 'Image hash already registered on blockchain.' });
+    }
+
     const tx = await contract.registerImageHash(imageHash);
     await tx.wait();
 
-    res.status(200).json({ message: 'Image hash registered successfully!' });
+    res.status(200).json({
+      message: 'Image hash registered successfully!',
+      transactionHash: tx.hash
+    });
   } catch (error) {
     console.error('Error registering image hash:', error);
-    res.status(500).json({ error: 'Failed to register image hash.' });
+
+    if (error.message && error.message.includes('Hash already registered')) {
+      return res.status(409).json({ error: 'Image hash already registered on blockchain.' });
+    }
+
+    res.status(500).json({
+      error: 'Failed to register image hash.',
+      details: error.message
+    });
   }
 });
 

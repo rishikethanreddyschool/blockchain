@@ -3,14 +3,12 @@ import { useAuth } from '../contexts/AuthContext';
 import Navbar from '../components/Navbar';
 import UploadTab from '../components/UploadTab';
 import GalleryTab from '../components/GalleryTab';
-import HelloWorldDisplay from '../components/HelloWorldDisplay';
-import SetGreeting from '../components/SetGreeting';
-import { Upload, Image } from 'lucide-react';
+import VerifyArtworkTab from '../components/VerifyArtworkTab';
+import { Upload, Image, Shield } from 'lucide-react';
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'gallery'>('gallery');
+  const [activeTab, setActiveTab] = useState<'gallery' | 'upload' | 'verify'>('gallery');
   const { user } = useAuth();
-  const [refreshGreeting, setRefreshGreeting] = useState(0);
 
   if (!user) return null;
 
@@ -52,17 +50,28 @@ export default function DashboardPage() {
                 <Upload className="h-5 w-5 mr-2" />
                 Upload Artwork
               </button>
+              <button
+                onClick={() => setActiveTab('verify')}
+                className={`flex-1 flex items-center justify-center px-6 py-4 text-sm font-medium transition-colors ${
+                  activeTab === 'verify'
+                    ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <Shield className="h-5 w-5 mr-2" />
+                Verify Artwork
+              </button>
             </nav>
           </div>
 
           {/* Tab Content */}
           <div className="p-6">
-            {activeTab === 'gallery' ? <GalleryTab /> : <UploadTab />}
+            {activeTab === 'gallery' && <GalleryTab />}
+            {activeTab === 'upload' && <UploadTab />}
+            {activeTab === 'verify' && <VerifyArtworkTab />}
           </div>
         </div>
 
-        {/* HelloWorld Contract Interaction */}
-        
       </div>
     </div>
   );

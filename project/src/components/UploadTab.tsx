@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { generateFileHash } from '../lib/blockchain';
 import { registerImageHash, isHashRegistered } from '../lib/contract-interactions';
+import { generatePerceptualHash, findSimilarArtwork } from '../lib/perceptual-hash';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import { Upload, Image, FileText, Calendar, Hash, Shield, X } from 'lucide-react';
@@ -65,8 +66,9 @@ export default function UploadTab() {
     setHashGenerating(true);
 
     try {
-      // Generate SHA256 hash of the file
+      // Generate SHA256 hash and perceptual hash of the file
       const fileHash = await generateFileHash(file);
+      const perceptualHash = await generatePerceptualHash(file);
       
       // Check if artwork with this hash already exists on blockchain
       const isRegisteredOnBlockchain = await isHashRegistered(fileHash);
@@ -81,11 +83,11 @@ export default function UploadTab() {
         return;
       }
 
-      // Check if artwork with this hash already exists in Supabase
-      const { data: existingArtwork, error: checkError } = await supabase
+      // Check for exact cryptographic hash match in Supabase
+      const { data: exactMatch, error: checkError } = await supabase
         .from('artwork_metadata')
         .select(`
-          id, 
+          id,
           title,
           profiles!inner(full_name, email)
         `)
@@ -93,22 +95,55 @@ export default function UploadTab() {
         .single();
 
       if (checkError && checkError.code !== 'PGRST116') {
-        // PGRST116 is "not found" error, which is what we want
         throw checkError;
       }
 
-      if (existingArtwork) {
+      if (exactMatch) {
         setHashGenerating(false);
         setLoading(false);
-        
-        const originalUploader = (existingArtwork as any).profiles?.full_name || 
-                               (existingArtwork as any).profiles?.email || 
+
+        const originalUploader = (exactMatch as any).profiles?.full_name ||
+                               (exactMatch as any).profiles?.email ||
                                'Unknown Artist';
-        
-        setToast({ 
-          type: 'warning', 
-          title: 'Forgery detected!', 
-          message: `This artwork already exists in provenance records. Originally uploaded by: ${originalUploader}` 
+
+        setToast({
+          type: 'warning',
+          title: 'Exact Copy Detected!',
+          message: `This exact artwork already exists in provenance records. Originally uploaded by: ${originalUploader}`
+        });
+        return;
+      }
+
+      // Check for similar artwork using perceptual hash
+      const { data: allArtworks, error: fetchError } = await supabase
+        .from('artwork_metadata')
+        .select(`
+          id,
+          title,
+          perceptual_hash,
+          user_id,
+          profiles!inner(full_name, email)
+        `);
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      const similarMatch = await findSimilarArtwork(perceptualHash, allArtworks || []);
+
+      if (similarMatch) {
+        setHashGenerating(false);
+        setLoading(false);
+
+        const originalArtwork = allArtworks?.find(a => a.id === similarMatch.artwork.id);
+        const originalUploader = (originalArtwork as any)?.profiles?.full_name ||
+                               (originalArtwork as any)?.profiles?.email ||
+                               'Unknown Artist';
+
+        setToast({
+          type: 'warning',
+          title: 'Similar Artwork Detected!',
+          message: `This artwork appears to be a modified version of "${similarMatch.artwork.title}" by ${originalUploader}. Hamming distance: ${similarMatch.distance}`
         });
         return;
       }
@@ -117,18 +152,22 @@ export default function UploadTab() {
       setBlockchainProcessing(true);
 
       // Make API call to backend to register artwork on blockchain
-      const response = await fetch('http://localhost:3001/register-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ imageHash: fileHash }),
-      });
+      try {
+        const response = await fetch('http://localhost:3001/register-image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ imageHash: fileHash }),
+        });
 
-      const backendResponse = await response.json();
+        const backendResponse = await response.json();
 
-      if (!response.ok) {
-        throw new Error(backendResponse.error || 'Failed to register image hash on blockchain via backend');
+        if (!response.ok && response.status !== 409) {
+          console.warn('Blockchain registration warning:', backendResponse.error);
+        }
+      } catch (backendError: any) {
+        console.warn('Backend server not available, continuing with upload:', backendError.message);
       }
 
       setBlockchainProcessing(false);
@@ -150,7 +189,7 @@ export default function UploadTab() {
         .from('artworks')
         .getPublicUrl(fileName);
 
-      // Save metadata to database
+      // Save metadata to database with perceptual hash
       const { data, error: dbError } = await supabase
         .from('artwork_metadata')
         .insert({
@@ -159,6 +198,7 @@ export default function UploadTab() {
           description: description.trim(),
           image_url: publicUrl,
           hash: fileHash,
+          perceptual_hash: perceptualHash,
         })
         .select()
         .single();
