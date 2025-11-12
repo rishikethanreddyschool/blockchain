@@ -140,10 +140,12 @@ export default function UploadTab() {
                                (originalArtwork as any)?.profiles?.email ||
                                'Unknown Artist';
 
+        const confidencePercentage = (similarMatch.confidence * 100).toFixed(1);
+
         setToast({
           type: 'warning',
           title: 'Similar Artwork Detected!',
-          message: `This artwork appears to be a modified version of "${similarMatch.artwork.title}" by ${originalUploader}. Hamming distance: ${similarMatch.distance}`
+          message: `This artwork appears to be a modified version of "${similarMatch.artwork.title}" by ${originalUploader}. Similarity: ${confidencePercentage}% (Hamming distance: ${similarMatch.distance})`
         });
         return;
       }

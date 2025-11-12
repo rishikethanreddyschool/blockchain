@@ -48,20 +48,42 @@ export default function GalleryTab() {
     }
 
     setVerifyingHashes(prev => new Set(prev).add(artwork.id));
-    
+
     try {
       const verified = await isHashRegistered(artwork.hash);
-      
-      setVerificationResults(prev => new Map(prev).set(artwork.id, {
-        verified: verified,
-        error: verified ? undefined : 'Hash not found on blockchain'
-      }));
-      
+
+      if (verified) {
+        setVerificationResults(prev => new Map(prev).set(artwork.id, {
+          verified: true,
+          error: undefined
+        }));
+        setToast({
+          type: 'success',
+          title: 'Verified',
+          message: 'Artwork authenticity verified on blockchain!'
+        });
+      } else {
+        setVerificationResults(prev => new Map(prev).set(artwork.id, {
+          verified: false,
+          error: 'Hash not found on blockchain'
+        }));
+        setToast({
+          type: 'warning',
+          title: 'Not Found',
+          message: 'Artwork hash not found on blockchain. It may not have been registered yet.'
+        });
+      }
+
     } catch (error: any) {
       setVerificationResults(prev => new Map(prev).set(artwork.id, {
         verified: false,
         error: error.message
       }));
+      setToast({
+        type: 'error',
+        title: 'Verification Error',
+        message: error.message
+      });
     } finally {
       setVerifyingHashes(prev => {
         const newSet = new Set(prev);

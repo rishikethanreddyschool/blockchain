@@ -14,6 +14,7 @@ export default function VerifyArtworkTab() {
     artwork?: any;
     artist?: string;
     distance?: number;
+    confidence?: number;
   } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,13 +92,16 @@ export default function VerifyArtworkTab() {
           found: true,
           artwork: originalArtwork,
           artist: artistName,
-          distance: similarMatch.distance
+          distance: similarMatch.distance,
+          confidence: similarMatch.confidence
         });
+
+        const confidencePercentage = (similarMatch.confidence * 100).toFixed(1);
 
         setToast({
           type: 'success',
           title: 'Artwork Verified!',
-          message: `This artwork matches a verified record by ${artistName}`
+          message: `This artwork matches a verified record by ${artistName} with ${confidencePercentage}% confidence`
         });
       } else {
         setVerificationResult({
@@ -250,11 +254,18 @@ export default function VerifyArtworkTab() {
                   </div>
                   {verificationResult.distance !== undefined && (
                     <div>
-                      <p className="text-sm font-medium text-gray-700">Similarity Score</p>
-                      <p className="text-gray-900">
-                        Hamming Distance: {verificationResult.distance}
-                        {verificationResult.distance === 0 && ' (Exact Match)'}
-                      </p>
+                      <p className="text-sm font-medium text-gray-700">Similarity Analysis</p>
+                      <div className="space-y-1">
+                        <p className="text-gray-900">
+                          Confidence: {((verificationResult.confidence || 0) * 100).toFixed(1)}%
+                        </p>
+                        <p className="text-gray-600 text-sm">
+                          Hamming Distance: {verificationResult.distance}
+                          {verificationResult.distance === 0 && ' (Exact Match)'}
+                          {verificationResult.distance > 0 && verificationResult.distance <= 5 && ' (Highly Similar)'}
+                          {verificationResult.distance > 5 && verificationResult.distance <= 10 && ' (Similar - Minor Changes)'}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
