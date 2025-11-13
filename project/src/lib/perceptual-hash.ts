@@ -249,7 +249,7 @@ export async function compareImageFeatures(
   return (colorSimilarity * 0.4 + edgeSimilarity * 0.4 + textureSimilarity * 0.2);
 }
 
-function cosineSimilarity(vec1: number[], vec2: number[]): number {
+export function cosineSimilarity(vec1: number[], vec2: number[]): number {
   if (vec1.length !== vec2.length) return 0;
 
   let dotProduct = 0;

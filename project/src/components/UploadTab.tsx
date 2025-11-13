@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { generateFileHash } from '../lib/blockchain';
-import { registerImageHash, isHashRegistered } from '../lib/contract-interactions';
+import { registerImageHash, isHashRegistered, checkHashViaBackend } from '../lib/contract-interactions';
 import { generatePerceptualHash, findSimilarArtwork } from '../lib/perceptual-hash';
+import { extractAdvancedFeatures, compareForgeryRisk } from '../lib/ml-forgery-detection';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import { Upload, Image, FileText, Calendar, Hash, Shield, X } from 'lucide-react';
@@ -129,25 +130,68 @@ export default function UploadTab() {
         throw fetchError;
       }
 
-      const similarMatch = await findSimilarArtwork(perceptualHash, allArtworks || []);
+      setToast({
+        type: 'warning',
+        title: 'Analyzing Forgery Risk',
+        message: 'Running advanced ML-based forgery detection...'
+      });
 
-      if (similarMatch) {
-        setHashGenerating(false);
-        setLoading(false);
+      try {
+        const features = await extractAdvancedFeatures(file);
+        const allArtworkObjects: any[] = allArtworks || [];
 
-        const originalArtwork = allArtworks?.find(a => a.id === similarMatch.artwork.id);
-        const originalUploader = (originalArtwork as any)?.profiles?.full_name ||
-                               (originalArtwork as any)?.profiles?.email ||
-                               'Unknown Artist';
+        let maxRiskScore = 0;
+        let maxRiskData = null;
+        let maxRiskArtwork = null;
 
-        const confidencePercentage = (similarMatch.confidence * 100).toFixed(1);
+        for (const artwork of allArtworkObjects) {
+          try {
+            const artworkFile = artwork.file_data || null;
+            if (!artwork.id) continue;
 
-        setToast({
-          type: 'warning',
-          title: 'Similar Artwork Detected!',
-          message: `This artwork appears to be a modified version of "${similarMatch.artwork.title}" by ${originalUploader}. Similarity: ${confidencePercentage}% (Hamming distance: ${similarMatch.distance})`
-        });
-        return;
+            const similarMatch = await findSimilarArtwork(perceptualHash, [artwork]);
+
+            if (similarMatch && similarMatch.confidence > 0.70) {
+              const riskAnalysis = await compareForgeryRisk(features, {
+                keypoints: [],
+                descriptors: [],
+                histogram: [],
+                edges: [],
+                colorMoments: [],
+                sharpness: 0,
+                blur: 0,
+                sift_hash: artwork.perceptual_hash || ''
+              });
+
+              if (riskAnalysis.riskScore > maxRiskScore) {
+                maxRiskScore = riskAnalysis.riskScore;
+                maxRiskData = riskAnalysis;
+                maxRiskArtwork = artwork;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        if (maxRiskScore > 0.70) {
+          setHashGenerating(false);
+          setLoading(false);
+
+          const originalUploader = (maxRiskArtwork as any)?.profiles?.full_name ||
+                                 (maxRiskArtwork as any)?.profiles?.email ||
+                                 'Unknown Artist';
+          const riskPercentage = (maxRiskScore * 100).toFixed(1);
+
+          setToast({
+            type: 'error',
+            title: `Forgery Detected: ${maxRiskData?.detectionType}!`,
+            message: `${maxRiskData?.analysis} (Risk: ${riskPercentage}%) - Original by ${originalUploader}`
+          });
+          return;
+        }
+      } catch (mlError) {
+        console.warn('ML detection failed, using fallback:', mlError);
       }
 
       setHashGenerating(false);

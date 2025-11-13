@@ -3,7 +3,8 @@ import { supabase, ArtworkMetadata } from '../lib/supabase';
 import { isHashRegistered } from '../lib/contract-interactions';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
-import { Calendar, FileText, Shield, ExternalLink, CheckCircle, XCircle, Loader, User } from 'lucide-react';
+import ImagePreviewModal from './ImagePreviewModal';
+import { Calendar, FileText, Shield, ExternalLink, CheckCircle, XCircle, Loader, User, Eye } from 'lucide-react';
 
 export default function GalleryTab() {
   const [artworks, setArtworks] = useState<ArtworkMetadata[]>([]);
@@ -11,7 +12,13 @@ export default function GalleryTab() {
   const [toast, setToast] = useState<{type: 'success' | 'error' | 'warning', title: string, message: string} | null>(null);
   const [verifyingHashes, setVerifyingHashes] = useState<Set<string>>(new Set());
   const [verificationResults, setVerificationResults] = useState<Map<string, { verified: boolean; error?: string }>>(new Map());
-  
+  const [previewModal, setPreviewModal] = useState<{ isOpen: boolean; imageUrl: string; title: string; artist: string }>({
+    isOpen: false,
+    imageUrl: '',
+    title: '',
+    artist: ''
+  });
+
   const { user } = useAuth();
 
   useEffect(() => {
@@ -103,12 +110,20 @@ export default function GalleryTab() {
 
   return (
     <div className="space-y-6">
+      <ImagePreviewModal
+        isOpen={previewModal.isOpen}
+        imageUrl={previewModal.imageUrl}
+        title={previewModal.title}
+        artist={previewModal.artist}
+        onClose={() => setPreviewModal({ ...previewModal, isOpen: false })}
+      />
+
       {toast && (
-        <Toast 
-          type={toast.type} 
+        <Toast
+          type={toast.type}
           title={toast.title}
-          message={toast.message} 
-          onClose={() => setToast(null)} 
+          message={toast.message}
+          onClose={() => setToast(null)}
         />
       )}
 
@@ -140,12 +155,23 @@ export default function GalleryTab() {
                 className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 group border border-gray-100"
               >
                 {/* Image */}
-                <div className="aspect-square overflow-hidden bg-gray-100">
+                <div
+                  className="aspect-square overflow-hidden bg-gray-100 relative cursor-pointer"
+                  onClick={() => setPreviewModal({
+                    isOpen: true,
+                    imageUrl: artwork.image_url,
+                    title: artwork.title,
+                    artist: (artwork as any).profiles?.full_name || (artwork as any).profiles?.email?.split('@')[0] || 'Anonymous Artist'
+                  })}
+                >
                   <img
                     src={artwork.image_url}
                     alt={artwork.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-300 flex items-center justify-center">
+                    <Eye className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  </div>
                 </div>
                 
                 {/* Content */}

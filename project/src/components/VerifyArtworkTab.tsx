@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { generatePerceptualHash, findSimilarArtwork } from '../lib/perceptual-hash';
+import { extractAdvancedFeatures, compareForgeryRisk } from '../lib/ml-forgery-detection';
 import Toast from './Toast';
 import { Shield, Upload, CheckCircle, XCircle, AlertTriangle, X } from 'lucide-react';
 
@@ -15,6 +16,9 @@ export default function VerifyArtworkTab() {
     artist?: string;
     distance?: number;
     confidence?: number;
+    riskScore?: number;
+    detectionType?: string;
+    analysis?: string;
   } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,7 +67,14 @@ export default function VerifyArtworkTab() {
     setVerificationResult(null);
 
     try {
+      setToast({
+        type: 'warning',
+        title: 'Verifying Artwork',
+        message: 'Analyzing with advanced ML-based forgery detection...'
+      });
+
       const perceptualHash = await generatePerceptualHash(file);
+      const features = await extractAdvancedFeatures(file);
 
       const { data: allArtworks, error: fetchError } = await supabase
         .from('artwork_metadata')
@@ -80,10 +91,41 @@ export default function VerifyArtworkTab() {
         throw fetchError;
       }
 
-      const similarMatch = await findSimilarArtwork(perceptualHash, allArtworks || []);
+      let maxRiskScore = 0;
+      let maxRiskData: any = null;
+      let maxSimilarMatch: any = null;
+      let maxArtwork: any = null;
 
-      if (similarMatch) {
-        const originalArtwork = allArtworks?.find(a => a.id === similarMatch.artwork.id);
+      for (const artwork of (allArtworks || [])) {
+        const similarMatch = await findSimilarArtwork(perceptualHash, [artwork]);
+
+        if (similarMatch && similarMatch.confidence > 0.60) {
+          try {
+            const riskAnalysis = await compareForgeryRisk(features, {
+              keypoints: [],
+              descriptors: [],
+              histogram: [],
+              edges: [],
+              colorMoments: [],
+              sharpness: 0,
+              blur: 0,
+              sift_hash: artwork.perceptual_hash || ''
+            });
+
+            if (riskAnalysis.riskScore > maxRiskScore) {
+              maxRiskScore = riskAnalysis.riskScore;
+              maxRiskData = riskAnalysis;
+              maxSimilarMatch = similarMatch;
+              maxArtwork = artwork;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+
+      if (maxRiskScore > 0.60) {
+        const originalArtwork = maxArtwork;
         const artistName = (originalArtwork as any)?.profiles?.full_name ||
                           (originalArtwork as any)?.profiles?.email ||
                           'Unknown Artist';
@@ -92,16 +134,22 @@ export default function VerifyArtworkTab() {
           found: true,
           artwork: originalArtwork,
           artist: artistName,
-          distance: similarMatch.distance,
-          confidence: similarMatch.confidence
+          distance: maxSimilarMatch.distance,
+          confidence: maxSimilarMatch.confidence,
+          riskScore: maxRiskScore,
+          detectionType: maxRiskData.detectionType,
+          analysis: maxRiskData.analysis
         });
 
-        const confidencePercentage = (similarMatch.confidence * 100).toFixed(1);
+        const confidencePercentage = (maxSimilarMatch.confidence * 100).toFixed(1);
+        const riskPercentage = (maxRiskScore * 100).toFixed(1);
 
         setToast({
-          type: 'success',
-          title: 'Artwork Verified!',
-          message: `This artwork matches a verified record by ${artistName} with ${confidencePercentage}% confidence`
+          type: maxRiskScore > 0.85 ? 'warning' : 'success',
+          title: maxRiskScore > 0.85 ? `Forgery Detected: ${maxRiskData.detectionType}` : 'Artwork Verified!',
+          message: maxRiskScore > 0.85
+            ? `${maxRiskData.analysis} (Risk: ${riskPercentage}%) - Original by ${artistName}`
+            : `This artwork matches a verified record by ${artistName} with ${confidencePercentage}% confidence`
         });
       } else {
         setVerificationResult({
@@ -111,7 +159,7 @@ export default function VerifyArtworkTab() {
         setToast({
           type: 'warning',
           title: 'No Match Found',
-          message: 'No provenance record found — this artwork may be altered or unverified.'
+          message: 'No provenance record found — this artwork may be original or heavily altered.'
         });
       }
     } catch (error: any) {
@@ -217,7 +265,11 @@ export default function VerifyArtworkTab() {
         <div className="space-y-6">
           {verificationResult && (
             <div className={`bg-white rounded-xl border-2 p-6 ${
-              verificationResult.found ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'
+              verificationResult.found && verificationResult.riskScore && verificationResult.riskScore > 0.85
+                ? 'border-red-200 bg-red-50'
+                : verificationResult.found
+                ? 'border-green-200 bg-green-50'
+                : 'border-yellow-200 bg-yellow-50'
             }`}>
               <div className="flex items-center mb-4">
                 {verificationResult.found ? (
@@ -226,11 +278,40 @@ export default function VerifyArtworkTab() {
                   <AlertTriangle className="h-8 w-8 text-yellow-600 mr-3" />
                 )}
                 <h3 className={`text-lg font-semibold ${
-                  verificationResult.found ? 'text-green-900' : 'text-yellow-900'
+                  verificationResult.found && verificationResult.riskScore && verificationResult.riskScore > 0.85
+                    ? 'text-red-900'
+                    : verificationResult.found
+                    ? 'text-green-900'
+                    : 'text-yellow-900'
                 }`}>
-                  {verificationResult.found ? 'Verified Artwork' : 'No Match Found'}
+                  {verificationResult.found && verificationResult.riskScore && verificationResult.riskScore > 0.85
+                    ? `Forgery Detected: ${verificationResult.detectionType}`
+                    : verificationResult.found
+                    ? 'Verified Artwork'
+                    : 'No Match Found'}
                 </h3>
               </div>
+
+              {verificationResult.found && verificationResult.analysis && (
+                <div className="mb-4 p-3 bg-white bg-opacity-70 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700">Forgery Analysis</p>
+                  <p className="text-gray-900 mt-1">{verificationResult.analysis}</p>
+                  {verificationResult.riskScore && (
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Forgery Risk Score:</span>
+                      <span className={`font-bold ${
+                        verificationResult.riskScore > 0.85
+                          ? 'text-red-600'
+                          : verificationResult.riskScore > 0.70
+                          ? 'text-yellow-600'
+                          : 'text-green-600'
+                      }`}>
+                        {(verificationResult.riskScore * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {verificationResult.found && verificationResult.artwork ? (
                 <div className="space-y-3">
